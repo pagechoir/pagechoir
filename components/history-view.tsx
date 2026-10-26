@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useBook } from "@/components/book-provider";
 import { canWrite, restoreBundle } from "@/lib/model";
 
@@ -13,17 +13,17 @@ export function HistoryView() {
   const [message, setMessage] = useState("");
   const bookId = bundle?.book.id;
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!bookId) return;
     const response = await fetch(`/api/books/${bookId}/versions`);
     if (!response.ok) return;
     const payload = await response.json();
     setVersions(payload.versions);
-  }
+  }, [bookId]);
 
   useEffect(() => {
     void refresh();
-  }, [bookId]);
+  }, [refresh]);
 
   if (!bundle || !bookId) return null;
 

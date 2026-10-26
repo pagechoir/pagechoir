@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { useBook } from "@/components/book-provider";
@@ -161,7 +162,7 @@ function CardForm({
               reader.readAsDataURL(file);
             }} />
           </label>
-          {card.portrait ? <img src={card.portrait} alt="" className="h-28 w-28 rounded object-cover" /> : null}
+          {card.portrait ? <Image src={card.portrait} alt="" width={112} height={112} unoptimized className="h-28 w-28 rounded object-cover" /> : null}
           {field("Aliases", "aliases")}
           {field("Pronouns", "pronouns")}
           {field("Age", "age")}
