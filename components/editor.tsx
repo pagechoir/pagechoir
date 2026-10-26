@@ -7,7 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Superscript from "@tiptap/extension-superscript";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import Underline from "@tiptap/extension-underline";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Plugin } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -108,18 +108,30 @@ async function storeImage(file: File) {
   return dataUrl;
 }
 
+export async function insertEditorImage(editor: Editor, file: File) {
+  const src = await storeImage(file);
+  editor.chain().focus().setImage({ src, alt: file.name }).run();
+}
+
 export function ManuscriptEditor({
   nodeId,
   content,
   readOnly,
   onChange,
+  bare = false,
+  suggesting,
+  onEditor,
 }: {
   nodeId: string;
   content: JSONContent;
   readOnly: boolean;
   onChange: (doc: JSONContent) => void;
+  bare?: boolean;
+  suggesting?: boolean;
+  onEditor?: (editor: Editor | null) => void;
 }) {
   const [suggest, setSuggest] = useState(false);
+  const suggestingOn = suggesting ?? suggest;
   const [find, setFind] = useState("");
   const [replace, setReplace] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -127,7 +139,10 @@ export function ManuscriptEditor({
   const seeded = useRef(content);
   const seenNode = useRef(nodeId);
   const applying = useRef(false);
+  const mounted = useRef(true);
+  const onEditorRef = useRef(onEditor);
   onChangeRef.current = onChange;
+  onEditorRef.current = onEditor;
 
   const extensions = useMemo(
     () => [
@@ -158,16 +173,23 @@ export function ManuscriptEditor({
     content: seeded.current,
     editorProps,
     onUpdate: ({ editor: instance }) => {
-      if (applying.current) return;
+      if (applying.current || !mounted.current) return;
       onChangeRef.current(instance.getJSON());
     },
   });
 
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!editor) return;
     if (editor.isEditable === readOnly) editor.setEditable(!readOnly);
     const storage = editor.storage as { suggesting?: { enabled: boolean } };
-    if (storage.suggesting && storage.suggesting.enabled !== suggest) storage.suggesting.enabled = suggest;
+    if (storage.suggesting && storage.suggesting.enabled !== suggestingOn) storage.suggesting.enabled = suggestingOn;
     if (seenNode.current === nodeId) return;
     seenNode.current = nodeId;
     applying.current = true;
@@ -175,7 +197,11 @@ export function ManuscriptEditor({
     queueMicrotask(() => {
       applying.current = false;
     });
-  }, [editor, nodeId, content, readOnly, suggest]);
+  }, [editor, nodeId, content, readOnly, suggestingOn]);
+
+  useEffect(() => {
+    onEditorRef.current?.(editor ?? null);
+  }, [editor]);
 
   if (!editor) return <div className="h-[70vh] animate-pulse rounded-lg bg-paper" />;
 
@@ -191,6 +217,7 @@ export function ManuscriptEditor({
 
   return (
     <div>
+      {bare ? null : (
       <div className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
         {tool("Bold", () => editor.chain().focus().toggleBold().run(), editor.isActive("bold"))}
         {tool("Italic", () => editor.chain().focus().toggleItalic().run(), editor.isActive("italic"))}
@@ -216,6 +243,8 @@ export function ManuscriptEditor({
         {tool("70%", () => editor.chain().focus().updateAttributes("image", { width: "70%" }).run())}
         {tool("Full", () => editor.chain().focus().updateAttributes("image", { width: "100%" }).run())}
       </div>
+      )}
+      {bare ? null : (
       <div className="mb-3 flex flex-wrap gap-2 text-sm">
         <input className="rounded border border-line bg-paper-2 px-2 py-1" placeholder="Find" value={find} onChange={(event) => setFind(event.target.value)} />
         <input className="rounded border border-line bg-paper-2 px-2 py-1" placeholder="Replace" value={replace} onChange={(event) => setReplace(event.target.value)} />
@@ -243,6 +272,7 @@ export function ManuscriptEditor({
           Replace all
         </button>
       </div>
+      )}
       <input
         ref={fileRef}
         type="file"

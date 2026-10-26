@@ -44,6 +44,7 @@ export function BookShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const writing = pathname.endsWith("/write");
   const unread = bundle.comments.filter((comment) => !comment.resolved && comment.updatedAt > book.lastCommentSeenAt).length;
   const status =
     book.status === "synced"
@@ -63,6 +64,95 @@ export function BookShell({ children }: { children: React.ReactNode }) {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The folder was not connected.");
     }
+  }
+
+  const backupControls = (
+    <div className="flex flex-wrap gap-2 text-sm">
+      <button type="button" className="rounded border border-line px-2 py-1" onClick={() => downloadText(`${bundle.book.title}.md`, bookMarkdown(bundle), "text/markdown")}>
+        Markdown
+      </button>
+      <button
+        type="button"
+        className="rounded border border-line px-2 py-1"
+        onClick={async () => {
+          const bytes = await buildDocx(bundle);
+          const blob = new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = `${bundle.book.title}.docx`;
+          anchor.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+        }}
+      >
+        Word
+      </button>
+      <button type="button" className="rounded border border-line px-2 py-1" onClick={() => downloadText(`${bundle.book.title}.json`, JSON.stringify(bundle, null, 2), "application/json")}>
+        JSON snapshot
+      </button>
+      {folderSupported() ? (
+        book.folderOn ? (
+          <button type="button" className="rounded border border-line px-2 py-1" onClick={async () => { await forgetFolder(); await book.refreshFolder(); }}>
+            Stop folder copies
+          </button>
+        ) : (
+          <button type="button" className="rounded border border-line px-2 py-1" onClick={() => void connectFolder()}>
+            Save copies to a folder
+          </button>
+        )
+      ) : (
+        <span className="text-muted">Folder copies are available in Chrome, Edge, and Opera.</span>
+      )}
+      {message ? <span className="text-muted">{message}</span> : null}
+    </div>
+  );
+
+  if (writing) {
+    return (
+      <div className="studio-app">
+        <nav className="studio-rail" aria-label="Book">
+          {links.map(([href, label]) => {
+            const active = pathname.includes(`/${href.split("/")[0]}`);
+            return (
+              <Link key={href} href={`/books/${bundle.book.id}/${href}`} className={active ? "is-on" : ""} aria-label={label} title={label}>
+                <RailIcon name={href.split("/")[0]} />
+              </Link>
+            );
+          })}
+          <span className="studio-rail-gap" />
+          <button type="button" className={open === "backup" ? "is-on" : ""} aria-label="Download backup" title="Download backup" onClick={() => setOpen(open === "backup" ? null : "backup")}>
+            <RailIcon name="backup" />
+          </button>
+          <button type="button" className={open === "people" ? "is-on" : ""} aria-label={unread ? `Inbox, ${unread} unread` : "Inbox"} title="Inbox" onClick={() => { setOpen(open === "people" ? null : "people"); void book.markCommentsRead(); }}>
+            <RailIcon name="inbox" />
+            {unread ? <i className="studio-badge" /> : null}
+          </button>
+          <button type="button" className={open === "share" ? "is-on" : ""} aria-label="Share" title="Share" onClick={() => setOpen(open === "share" ? null : "share")}>
+            <RailIcon name="share" />
+          </button>
+          <button type="button" aria-label="Theme" title="Theme" onClick={() => {
+            const dark = !document.documentElement.classList.contains("dark");
+            document.documentElement.classList.toggle("dark", dark);
+            localStorage.setItem("pagechoir-theme", dark ? "dark" : "light");
+          }}>
+            <RailIcon name="theme" />
+          </button>
+          <Link href="/account" aria-label="Account" title="Account"><RailIcon name="account" /></Link>
+        </nav>
+        {open ? (
+          <div className="studio-flyout">
+            <header>
+              <strong>{open === "backup" ? "Download backup" : open === "people" ? "Inbox" : "Share"}</strong>
+              <button type="button" onClick={() => setOpen(null)} aria-label="Close">×</button>
+            </header>
+            {open === "backup" ? backupControls : null}
+            {open === "people" ? <PeoplePanel /> : null}
+            {open === "share" ? <SharePanel /> : null}
+          </div>
+        ) : null}
+        <div className="studio-main">{children}</div>
+      </div>
+    );
   }
 
   return (
@@ -102,59 +192,29 @@ export function BookShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         {book.error ? <p className="px-4 pb-2 text-sm text-coral">{book.error}</p> : null}
-        {open === "backup" ? (
-          <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3 text-sm">
-            <button type="button" className="rounded border border-line px-2 py-1" onClick={() => downloadText(`${bundle.book.title}.md`, bookMarkdown(bundle), "text/markdown")}>
-              Markdown
-            </button>
-            <button
-              type="button"
-              className="rounded border border-line px-2 py-1"
-              onClick={async () => {
-                const bytes = await buildDocx(bundle);
-                const blob = new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement("a");
-                anchor.href = url;
-                anchor.download = `${bundle.book.title}.docx`;
-                anchor.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1500);
-              }}
-            >
-              Word
-            </button>
-            <button type="button" className="rounded border border-line px-2 py-1" onClick={() => downloadText(`${bundle.book.title}.json`, JSON.stringify(bundle, null, 2), "application/json")}>
-              JSON snapshot
-            </button>
-            {folderSupported() ? (
-              book.folderOn ? (
-                <button
-                  type="button"
-                  className="rounded border border-line px-2 py-1"
-                  onClick={async () => {
-                    await forgetFolder();
-                    await book.refreshFolder();
-                  }}
-                >
-                  Stop folder copies
-                </button>
-              ) : (
-                <button type="button" className="rounded border border-line px-2 py-1" onClick={() => void connectFolder()}>
-                  Save copies to a folder
-                </button>
-              )
-            ) : (
-              <span className="text-muted">Folder copies are available in Chrome, Edge, and Opera.</span>
-            )}
-            {message ? <span className="text-muted">{message}</span> : null}
-          </div>
-        ) : null}
+        {open === "backup" ? <div className="border-t border-line px-4 py-3">{backupControls}</div> : null}
         {open === "people" ? <PeoplePanel /> : null}
         {open === "share" ? <SharePanel /> : null}
       </header>
       <div>{children}</div>
     </div>
   );
+}
+
+function RailIcon({ name }: { name: string }) {
+  const common = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (name === "write") return <svg {...common}><path d="M6 4h9l3 3v13H6z" /><path d="M15 4v4h4" /></svg>;
+  if (name === "bible") return <svg {...common}><path d="M5 5h6a3 3 0 0 1 3 3v11H8a3 3 0 0 0-3 3z" /><path d="M19 5h-6a3 3 0 0 0-3 3v11h6a3 3 0 0 1 3 3z" /></svg>;
+  if (name === "timeline") return <svg {...common}><path d="M4 12h16" /><circle cx="8" cy="12" r="2" /><circle cx="16" cy="12" r="2" /></svg>;
+  if (name === "boards") return <svg {...common}><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z" /></svg>;
+  if (name === "goals") return <svg {...common}><path d="M5 19V9M12 19V5M19 19v-7" /></svg>;
+  if (name === "history") return <svg {...common}><path d="M4 12a8 8 0 1 0 2-5" /><path d="M4 4v4h4M12 8v5l3 2" /></svg>;
+  if (name === "export") return <svg {...common}><path d="M12 4v10M8 10l4 4 4-4M5 19h14" /></svg>;
+  if (name === "backup") return <svg {...common}><path d="M12 4v10M8 10l4 4 4-4" /><path d="M5 19h14" /></svg>;
+  if (name === "inbox") return <svg {...common}><path d="M4 6h16v12H4zM4 13h5l2 2h2l2-2h5" /></svg>;
+  if (name === "share") return <svg {...common}><circle cx="7" cy="12" r="2" /><circle cx="17" cy="7" r="2" /><circle cx="17" cy="17" r="2" /><path d="M9 11l6-3M9 13l6 3" /></svg>;
+  if (name === "theme") return <svg {...common}><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5 18 18M6 18l1.5-1.5M16.5 7.5 18 6" /><circle cx="12" cy="12" r="3" /></svg>;
+  return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5 19c1.5-3 3.5-4 7-4s5.5 1 7 4" /></svg>;
 }
 
 function PeoplePanel() {
