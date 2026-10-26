@@ -42,6 +42,7 @@ export function Manuscript() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [, redraw] = useState(0);
   const dragId = useRef<string | null>(null);
+  const writeRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -165,6 +166,19 @@ export function Manuscript() {
     setTool(null);
   }
 
+  function dropOnTrash(event: React.DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = dragId.current || event.dataTransfer.getData("text/plain");
+    if (!sourceId || !canWrite(role)) return;
+    const source = bundle!.nodes.find((node) => node.id === sourceId);
+    if (!source) return;
+    const locked = source.kind === "front" && source.matterKey === "title";
+    setActiveId(source.id);
+    setTool("delete");
+    setConfirmDelete(!locked);
+  }
+
   function splitActive() {
     if (!editor || !active || active.matterKey === "title") return;
     const doc = editor.state.doc;
@@ -230,9 +244,12 @@ export function Manuscript() {
               dragId.current = node.id;
               event.dataTransfer.setData("text/plain", node.id);
               event.dataTransfer.effectAllowed = "move";
+              writeRef.current?.classList.add("is-dragging");
             }}
             onDragEnd={() => {
               dragId.current = null;
+              writeRef.current?.classList.remove("is-dragging");
+              writeRef.current?.querySelector(".studio-trash-target")?.classList.remove("is-hot");
             }}
           >
             <GripIcon />
@@ -255,7 +272,7 @@ export function Manuscript() {
   };
 
   return (
-    <div className={`studio-write ${focus ? "is-focus" : ""}`} style={{ ["--scene-break" as string]: JSON.stringify(bundle.book.settings.sceneBreak || "✶") }}>
+    <div ref={writeRef} className={`studio-write ${focus ? "is-focus" : ""}`} style={{ ["--scene-break" as string]: JSON.stringify(bundle.book.settings.sceneBreak || "✶") }}>
       <aside className={`studio-tree ${treeOpen ? "is-open" : ""}`}>
         <header className="studio-tree-head">
           <strong>Manuscript</strong>
@@ -323,7 +340,6 @@ export function Manuscript() {
             <strong>{bundle.book.title}</strong>
             <span>{statusLine}</span>
           </div>
-          <Link href={`/books/${bundle.book.id}/goals`} className="studio-goals">Goals & insights</Link>
         </header>
         {focus ? <button type="button" className="studio-leave" onClick={() => setFocus(false)}>Leave focus</button> : null}
         <div className="studio-sheet prose-page">
@@ -365,6 +381,23 @@ export function Manuscript() {
         </div>
         {index > 0 ? <button type="button" className="studio-nav prev" aria-label="Previous section" onClick={() => setActiveId(sequence[index - 1].id)}>‹</button> : null}
         {index >= 0 && index < sequence.length - 1 ? <button type="button" className="studio-nav next" aria-label="Next section" onClick={() => setActiveId(sequence[index + 1].id)}>›</button> : null}
+        {canWrite(role) ? (
+          <div className="studio-trash-layer">
+            <div
+              className="studio-trash-target"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDragEnter={(event) => event.currentTarget.classList.add("is-hot")}
+              onDragLeave={(event) => event.currentTarget.classList.remove("is-hot")}
+              onDrop={dropOnTrash}
+            >
+              <RailIcon name="trash" />
+              <span>Drop to delete</span>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {focus ? null : (
@@ -472,6 +505,9 @@ export function Manuscript() {
             <RailButton label="Spelling and grammar" active={tool === "spelling"} onClick={() => toggleTool("spelling")} icon="spelling" />
             <RailButton label="Comments" active={tool === "comments"} onClick={() => toggleTool("comments")} icon="comment" />
             <RailButton label="Pinned notes" active={tool === "notes"} onClick={() => toggleTool("notes")} icon="pin" />
+            <Link href={`/books/${bundle.book.id}/goals`} aria-label="Goals & insights" title="Goals & insights">
+              <RailIcon name="goals" />
+            </Link>
             <RailButton label="Split chapter" active={tool === "split"} onClick={() => toggleTool("split")} icon="split" />
             <RailButton label="Delete chapter" active={tool === "delete"} onClick={() => toggleTool("delete")} icon="trash" />
             <span className="flex-1" />
@@ -536,6 +572,7 @@ function RailIcon({ name }: { name: string }) {
   if (name === "spelling") return <svg {...common}><path d="M5 18l4-12h2l4 12M7 13h6" /><path d="M17 14h3" /></svg>;
   if (name === "comment") return <svg {...common}><path d="M6 6h12v9H9l-3 3z" /></svg>;
   if (name === "pin") return <svg {...common}><path d="M9 4h6l-1 6 3 2v2H7v-2l3-2zM12 14v6" /></svg>;
+  if (name === "goals") return <svg {...common}><path d="M5 19V9M12 19V5M19 19v-7" /></svg>;
   if (name === "split") return <svg {...common}><path d="M8 4v16M16 4v16M4 12h4M16 12h4" /></svg>;
   if (name === "trash") return <svg {...common}><path d="M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12" /></svg>;
   return <svg {...common}><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" /></svg>;

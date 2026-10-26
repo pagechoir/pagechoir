@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useBook } from "@/components/book-provider";
 import { forgetFolder, folderSupported, mirrorBook, rememberFolder } from "@/lib/client-store";
@@ -35,6 +35,11 @@ export function BookShell({ children }: { children: React.ReactNode }) {
   const bundle = book.bundle;
   const [open, setOpen] = useState<"backup" | "people" | "share" | null>(null);
   const [message, setMessage] = useState("");
+  const [darkOn, setDarkOn] = useState(false);
+
+  useEffect(() => {
+    setDarkOn(document.documentElement.classList.contains("dark"));
+  }, []);
 
   if (!bundle) {
     return (
@@ -130,10 +135,11 @@ export function BookShell({ children }: { children: React.ReactNode }) {
           <button type="button" className={open === "share" ? "is-on" : ""} aria-label="Share" title="Share" onClick={() => setOpen(open === "share" ? null : "share")}>
             <RailIcon name="share" />
           </button>
-          <button type="button" aria-label="Theme" title="Theme" onClick={() => {
+          <button type="button" className={darkOn ? "is-on" : ""} aria-label="Theme" title="Theme" onClick={() => {
             const dark = !document.documentElement.classList.contains("dark");
             document.documentElement.classList.toggle("dark", dark);
             localStorage.setItem("pagechoir-theme", dark ? "dark" : "light");
+            setDarkOn(dark);
           }}>
             <RailIcon name="theme" />
           </button>
