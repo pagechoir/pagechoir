@@ -27,6 +27,7 @@ export type BookSettings = {
   blankVerso: boolean;
   includeToc: boolean;
   coverImage: string;
+  paragraphIndent?: boolean;
 };
 
 export type BookMeta = {
@@ -335,6 +336,7 @@ export function defaultSettings(): BookSettings {
     blankVerso: true,
     includeToc: true,
     coverImage: "",
+    paragraphIndent: false,
   };
 }
 

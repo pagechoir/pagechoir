@@ -9,10 +9,12 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import Underline from "@tiptap/extension-underline";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Plugin } from "@tiptap/pm/state";
+import { EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSONContent } from "@/lib/model";
 import { uid } from "@/lib/model";
+import { loadProof, onProofReady, proofChecker, proofDocument, type ProofIssue } from "@/lib/proof";
 
 const SuggestionInsert = Mark.create({
   name: "suggestionInsert",
@@ -74,6 +76,42 @@ const Footnote = Node.create({
   parseHTML: () => [{ tag: "sup[data-footnote]" }],
   renderHTML({ HTMLAttributes }) {
     return ["sup", { "data-footnote": HTMLAttributes.text, title: HTMLAttributes.text }, "*"];
+  },
+});
+
+const proofKey = new PluginKey("proof");
+
+const Proof = Extension.create({
+  name: "proof",
+  addStorage() {
+    return { issues: [] as ProofIssue[] };
+  },
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    const refresh = (state: EditorState) => {
+      const issues = proofDocument(state.doc, proofChecker());
+      const storage = editor.storage as { proof?: { issues: ProofIssue[] } };
+      if (storage.proof) storage.proof.issues = issues;
+      const marks = issues.flatMap((issue) => {
+        if (issue.from >= issue.to || issue.to > state.doc.content.size) return [];
+        return [Decoration.inline(issue.from, issue.to, { class: issue.kind === "spelling" ? "proof-spell" : "proof-grammar" })];
+      });
+      return DecorationSet.create(state.doc, marks);
+    };
+    return [
+      new Plugin({
+        key: proofKey,
+        state: {
+          init: (_config, state) => refresh(state),
+          apply: (tr, old, _oldState, state) => (tr.docChanged || tr.getMeta(proofKey) ? refresh(state) : old),
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          },
+        },
+      }),
+    ];
   },
 });
 
@@ -150,7 +188,9 @@ export function ManuscriptEditor({
       Underline,
       Link.configure({ openOnClick: false }),
       Superscript,
-      Placeholder.configure({ placeholder: "Start the page…" }),
+      Placeholder.configure({
+        placeholder: ({ editor: instance }) => (instance.isEmpty ? "Start the page…" : ""),
+      }),
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -161,10 +201,11 @@ export function ManuscriptEditor({
       SuggestionInsert,
       SuggestionDelete,
       Suggesting,
+      Proof,
     ],
     [],
   );
-  const editorProps = useMemo(() => ({ attributes: { spellcheck: "true" } }), []);
+  const editorProps = useMemo(() => ({ attributes: { spellcheck: "true", lang: "en" } }), []);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -201,6 +242,22 @@ export function ManuscriptEditor({
 
   useEffect(() => {
     onEditorRef.current?.(editor ?? null);
+  }, [editor]);
+
+  useEffect(() => {
+    void loadProof();
+  }, []);
+
+  useEffect(() => {
+    if (!editor) return;
+    return onProofReady(() => {
+      if (editor.isDestroyed) return;
+      try {
+        editor.view.dispatch(editor.state.tr.setMeta(proofKey, true));
+      } catch {
+        /* The view is not mounted yet. */
+      }
+    });
   }, [editor]);
 
   if (!editor) return <div className="h-[70vh] animate-pulse rounded-lg bg-paper" />;

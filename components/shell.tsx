@@ -125,6 +125,7 @@ export function BookShell({ children }: { children: React.ReactNode }) {
             );
           })}
           <span className="studio-rail-gap" />
+          <Link href="/" aria-label="Bookshelf" title="Bookshelf"><RailIcon name="shelf" /></Link>
           <button type="button" className={open === "backup" ? "is-on" : ""} aria-label="Download backup" title="Download backup" onClick={() => setOpen(open === "backup" ? null : "backup")}>
             <RailIcon name="backup" />
           </button>
@@ -215,8 +216,9 @@ function RailIcon({ name }: { name: string }) {
   if (name === "boards") return <svg {...common}><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z" /></svg>;
   if (name === "goals") return <svg {...common}><path d="M5 19V9M12 19V5M19 19v-7" /></svg>;
   if (name === "history") return <svg {...common}><path d="M4 12a8 8 0 1 0 2-5" /><path d="M4 4v4h4M12 8v5l3 2" /></svg>;
-  if (name === "export") return <svg {...common}><path d="M12 4v10M8 10l4 4 4-4M5 19h14" /></svg>;
-  if (name === "backup") return <svg {...common}><path d="M12 4v10M8 10l4 4 4-4" /><path d="M5 19h14" /></svg>;
+  if (name === "export") return <svg {...common}><path d="M14 4h5v5" /><path d="M19 4l-8 8" /><path d="M16 13v6H5V6h6" /></svg>;
+  if (name === "backup") return <svg {...common}><path d="M4 8l8-3 8 3-8 3-8-3z" /><path d="M4 8v5l8 3 8-3V8" /><path d="M12 11v5" /></svg>;
+  if (name === "shelf") return <svg {...common}><path d="M5 5h14v3H5zM5 11h14v3H5zM5 17h14v3H5z" /></svg>;
   if (name === "inbox") return <svg {...common}><path d="M4 6h16v12H4zM4 13h5l2 2h2l2-2h5" /></svg>;
   if (name === "share") return <svg {...common}><circle cx="7" cy="12" r="2" /><circle cx="17" cy="7" r="2" /><circle cx="17" cy="17" r="2" /><path d="M9 11l6-3M9 13l6 3" /></svg>;
   if (name === "theme") return <svg {...common}><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5 18 18M6 18l1.5-1.5M16.5 7.5 18 6" /><circle cx="12" cy="12" r="3" /></svg>;

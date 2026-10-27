@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { Editor } from "@tiptap/react";
 import type { Node as ProseNode } from "@tiptap/pm/model";
+import type { Editor } from "@tiptap/react";
 import { insertEditorImage, ManuscriptEditor } from "@/components/editor";
 import { useBook } from "@/components/book-provider";
-import { writingIssues } from "@/lib/stats";
+import type { ProofIssue } from "@/lib/proof";
+import { proofStatus } from "@/lib/proof";
+import { findRanges } from "@/lib/search";
 import {
   canComment,
   canWrite,
@@ -57,7 +58,12 @@ export function Manuscript() {
   if (!bundle) return null;
   const active = bundle.nodes.find((node) => node.id === activeId) ?? bundle.nodes.find((node) => node.kind === "chapter") ?? bundle.nodes[0];
   const text = plainTextFromDoc(active?.content);
-  const issues = writingIssues(text);
+  const sectionWords = active?.matterKey === "title"
+    ? wordCountText([bundle.book.title, bundle.book.subtitle, bundle.book.authorName].filter(Boolean).join(" "))
+    : wordCountText(text);
+  const sectionLabel = active?.kind === "chapter" ? "chapter" : active?.kind === "scene" ? "scene" : active?.kind === "part" ? "part" : "section";
+  const liveEditor = editor && !editor.isDestroyed ? editor : null;
+  const proofIssues = ((liveEditor?.storage as { proof?: { issues?: ProofIssue[] } } | undefined)?.proof?.issues) ?? [];
   const changed = bundle.nodes.filter((node) => lastOpenedAt && node.updatedAt > lastOpenedAt);
   const pins = bundle.pins.filter((pin) => pin.nodeId === active?.id || bundle.nodes.some((node) => node.id === pin.nodeId && node.parentId === active?.id));
   const editable = canWrite(role) && active?.matterKey !== "title";
@@ -272,7 +278,7 @@ export function Manuscript() {
   };
 
   return (
-    <div ref={writeRef} className={`studio-write ${focus ? "is-focus" : ""}`} style={{ ["--scene-break" as string]: JSON.stringify(bundle.book.settings.sceneBreak || "✶") }}>
+    <div ref={writeRef} className={`studio-write ${focus ? "is-focus" : ""} ${bundle.book.settings.paragraphIndent ? "is-indent" : ""}`} style={{ ["--scene-break" as string]: JSON.stringify(bundle.book.settings.sceneBreak || "✶") }}>
       <aside className={`studio-tree ${treeOpen ? "is-open" : ""}`}>
         <header className="studio-tree-head">
           <strong>Manuscript</strong>
@@ -329,13 +335,23 @@ export function Manuscript() {
             <DropHint label="Drag chapters here" onDrop={() => dropIn("back")} />
           </Section>
         </div>
-        <footer className="studio-words">{wordCount.toLocaleString()} words</footer>
+        <footer className="studio-words">
+          <span>{wordCount.toLocaleString()} words in the book</span>
+          <span>{sectionWords.toLocaleString()} in this {sectionLabel}</span>
+        </footer>
       </aside>
 
       <section className="studio-page">
         <header className="studio-page-bar">
           <button type="button" className="studio-tree-toggle" onClick={() => setTreeOpen((open) => !open)} aria-label="Manuscript">☰</button>
-          <Link href="/" className="studio-back" aria-label="Bookshelf">←</Link>
+          <div className="studio-history">
+            <button type="button" aria-label="Undo" title="Undo" disabled={!editable || !liveEditor?.can().undo()} onClick={() => liveEditor?.chain().focus().undo().run()}>
+              <HistoryIcon direction="undo" />
+            </button>
+            <button type="button" aria-label="Redo" title="Redo" disabled={!editable || !liveEditor?.can().redo()} onClick={() => liveEditor?.chain().focus().redo().run()}>
+              <HistoryIcon direction="redo" />
+            </button>
+          </div>
           <div className="studio-titleblock">
             <strong>{bundle.book.title}</strong>
             <span>{statusLine}</span>
@@ -410,6 +426,19 @@ export function Manuscript() {
               </header>
               {tool === "format" && editor ? (
                 <div className="studio-format">
+                  <p>Indent paragraphs keeps the first paragraph flush and indents the rest.</p>
+                  <ToolButton
+                    label="Indent paragraphs"
+                    active={Boolean(bundle.book.settings.paragraphIndent)}
+                    onClick={() => update((current) => ({
+                      ...current,
+                      book: {
+                        ...current.book,
+                        updatedAt: now(),
+                        settings: { ...current.book.settings, paragraphIndent: !current.book.settings.paragraphIndent },
+                      },
+                    }))}
+                  />
                   <ToolButton label="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} />
                   <ToolButton label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive("italic")} />
                   <ToolButton label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive("underline")} />
@@ -435,14 +464,14 @@ export function Manuscript() {
                   }} />
                 </div>
               ) : null}
-              {tool === "find" && editor ? (
-                <form className="studio-form" onSubmit={(event) => { event.preventDefault(); revealFind(editor, find, setFindNote); }}>
+              {tool === "find" && liveEditor ? (
+                <form className="studio-form" onSubmit={(event) => { event.preventDefault(); revealFind(liveEditor, find, setFindNote); }}>
                   <input placeholder="Find" value={find} onChange={(event) => { setFind(event.target.value); setFindNote(""); }} />
                   <input placeholder="Replace" value={replace} onChange={(event) => setReplace(event.target.value)} />
                   <div className="flex gap-2">
                     <button type="submit">Find</button>
-                    <button type="button" onClick={() => setFindNote(replaceFind(editor, find, replace, false))}>Replace</button>
-                    <button type="button" onClick={() => setFindNote(replaceFind(editor, find, replace, true))}>Replace all</button>
+                    <button type="button" onClick={() => setFindNote(replaceFind(liveEditor, find, replace, false))}>Replace</button>
+                    <button type="button" onClick={() => setFindNote(replaceFind(liveEditor, find, replace, true))}>Replace all</button>
                   </div>
                   {findNote ? <p>{findNote}</p> : null}
                 </form>
@@ -450,9 +479,21 @@ export function Manuscript() {
               {tool === "spelling" ? (
                 <div className="studio-form">
                   <p>{wordCountText(text).toLocaleString()} words in this section.</p>
-                  <p>The browser underlines spelling and grammar in the page as you type.</p>
-                  <p>{issues.doubles ? `${issues.doubles} double space${issues.doubles === 1 ? "" : "s"}.` : "No double spaces."}</p>
-                  <p>{issues.repeats.length ? `Repeated words: ${issues.repeats.join(", ")}` : "No repeated words."}</p>
+                  <p>Spelling and grammar are underlined in the page.</p>
+                  {proofStatus() === "loading" ? <p>Checking the dictionary…</p> : null}
+                  {proofStatus() === "failed" ? <p>The spelling dictionary could not be loaded.</p> : null}
+                  {proofIssues.length === 0 && proofStatus() !== "loading" ? <p>No spelling or grammar issues in this section.</p> : null}
+                  {proofIssues.map((issue) => (
+                    <button
+                      type="button"
+                      className="studio-issue"
+                      key={`${issue.from}-${issue.to}-${issue.kind}`}
+                      onClick={() => liveEditor?.chain().focus().setTextSelection({ from: issue.from, to: issue.to }).scrollIntoView().run()}
+                    >
+                      <strong>{issue.word}</strong>
+                      <span>{issue.message}</span>
+                    </button>
+                  ))}
                 </div>
               ) : null}
               {tool === "comments" && active && canComment(role) ? (
@@ -505,9 +546,6 @@ export function Manuscript() {
             <RailButton label="Spelling and grammar" active={tool === "spelling"} onClick={() => toggleTool("spelling")} icon="spelling" />
             <RailButton label="Comments" active={tool === "comments"} onClick={() => toggleTool("comments")} icon="comment" />
             <RailButton label="Pinned notes" active={tool === "notes"} onClick={() => toggleTool("notes")} icon="pin" />
-            <Link href={`/books/${bundle.book.id}/goals`} aria-label="Goals & insights" title="Goals & insights">
-              <RailIcon name="goals" />
-            </Link>
             <RailButton label="Split chapter" active={tool === "split"} onClick={() => toggleTool("split")} icon="split" />
             <RailButton label="Delete chapter" active={tool === "delete"} onClick={() => toggleTool("delete")} icon="trash" />
             <span className="flex-1" />
@@ -537,7 +575,10 @@ function Section({
   return (
     <section className="studio-section">
       <header>
-        <button type="button" onClick={onToggle}>{closed ? "▸" : "▾"} {title}</button>
+        <button type="button" className="studio-disclosure" aria-expanded={!closed} onClick={onToggle}>
+          <span aria-hidden="true">{closed ? "▸" : "▾"}</span>
+          {title}
+        </button>
         <button type="button" className={editing ? "is-on" : ""} onClick={onEdit}>edit</button>
       </header>
       {closed ? null : children}
@@ -572,7 +613,6 @@ function RailIcon({ name }: { name: string }) {
   if (name === "spelling") return <svg {...common}><path d="M5 18l4-12h2l4 12M7 13h6" /><path d="M17 14h3" /></svg>;
   if (name === "comment") return <svg {...common}><path d="M6 6h12v9H9l-3 3z" /></svg>;
   if (name === "pin") return <svg {...common}><path d="M9 4h6l-1 6 3 2v2H7v-2l3-2zM12 14v6" /></svg>;
-  if (name === "goals") return <svg {...common}><path d="M5 19V9M12 19V5M19 19v-7" /></svg>;
   if (name === "split") return <svg {...common}><path d="M8 4v16M16 4v16M4 12h4M16 12h4" /></svg>;
   if (name === "trash") return <svg {...common}><path d="M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12" /></svg>;
   return <svg {...common}><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" /></svg>;
@@ -586,26 +626,16 @@ function GripIcon() {
   );
 }
 
-function textMatches(doc: ProseNode, needle: string) {
-  const found: { from: number; to: number }[] = [];
-  if (!needle) return found;
-  doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return;
-    let index = 0;
-    while (index < node.text.length) {
-      const at = node.text.indexOf(needle, index);
-      if (at < 0) break;
-      found.push({ from: pos + at, to: pos + at + needle.length });
-      index = at + Math.max(needle.length, 1);
-    }
-  });
-  return found;
+function HistoryIcon({ direction }: { direction: "undo" | "redo" }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (direction === "undo") return <svg {...common}><path d="M8 7H4v4" /><path d="M4 11a8 8 0 1 0 2.2-5.6L4 8" /></svg>;
+  return <svg {...common}><path d="M16 7h4v4" /><path d="M20 11a8 8 0 1 1-2.2-5.6L20 8" /></svg>;
 }
 
 function revealFind(editor: Editor, needle: string, note: (value: string) => void) {
-  const matches = textMatches(editor.state.doc, needle);
+  const matches = findRanges(editor.state.doc, needle);
   if (!matches.length) {
-    note(needle ? "Not in this chapter." : "");
+    note(needle.trim() ? "Not in this chapter." : "");
     return;
   }
   const next = matches.find((match) => match.from >= editor.state.selection.from) ?? matches[0];
@@ -614,7 +644,7 @@ function revealFind(editor: Editor, needle: string, note: (value: string) => voi
 }
 
 function replaceFind(editor: Editor, needle: string, replacement: string, all: boolean) {
-  const matches = textMatches(editor.state.doc, needle);
+  const matches = findRanges(editor.state.doc, needle);
   if (!matches.length) return needle ? "Not in this chapter." : "";
   const next = matches.find((match) => match.from >= editor.state.selection.from) ?? matches[0];
   const targets = all ? matches : [next];
